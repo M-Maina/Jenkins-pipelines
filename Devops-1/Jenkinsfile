@@ -31,7 +31,7 @@ pipeline {
         
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('sonar') { 
+                withSonarQubeEnv('sonar') { //sonar server name
                     sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=santa \
                           -Dsonar.projectKey=santa -Dsonar.java.binaries=. '''
                 }
@@ -40,7 +40,7 @@ pipeline {
         
          stage('OWASP Check') {
             steps {
-                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'D-Check'
+                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'D-Check' //owasp settings for owasp integration
                     dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
@@ -64,7 +64,7 @@ pipeline {
         stage('Tag & Push Docker Image') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') { //docker fails to login
                     sh 'docker tag santa:latest wamah/santa:latest'
                     sh 'docker push wamah/santa:latest'
                 }
