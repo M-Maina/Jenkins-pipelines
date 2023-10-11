@@ -1,0 +1,35 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git 'https://github.com/M-Maina/CountryBank.git'
+            }
+        }
+
+    
+
+        stage('OWASP SCAN') {
+            steps {
+                dependencyCheck additionalArguments: ' --scan ./ ', odcInstallation: 'D-Check'
+                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+
+    
+    
+        stage('TRIVY SCAN') {
+            steps {
+                sh 'trivy fs .'
+            }
+        }
+        
+        stage('Docker Build') {
+            steps {
+                sh 'docker-compose up -d' //docker compose not found
+            }
+        }
+        
+    }
+}

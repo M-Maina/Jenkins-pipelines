@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+    
+    tools {
+        jdk 'jdk11'
+        maven 'maven3'
+    }
+    
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+    
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/jaiswaladi246/Petclinic.git'
+            }
+        }
+        
+        stage('Compile') {
+            steps {
+               sh "mvn clean compile"
+            }
+        }
+        
+        stage('Test cases') {
+            steps {
+               sh "mvn test"
+            }
+        }
+        
+        stage('Sonarqube Analysis') {
+            steps {
+               sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.url=http://13.235.115.91:9000/ -Dsonar.login=squ_0dbe68dbee1fb33ebf9d46975a892aee5d414927 -Dsonar.projectName=Petclinic \
+                    -Dsonar.java.binaries=. \
+                    -Dsonar.projectKey=Petclinic '''
+            }
+        }
+        
+        stage('Build') {
+            steps {
+               sh "mvn clean package "
+            }
+        }
+        
+        stage('OWASP Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan target/', odcInstallation: 'owasp'
+            }
+        }
+        
+        stage('Publish OWASP Dependency Check Report') {
+            steps {
+                publishHTML(target: [
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'target',
+                    reportFiles: 'dependency-check-report.html',
+                    reportName: 'OWASP Dependency Check Report'
+                ])
+            }
+        }
+        
+        stage('Tomcat Deploy') {
+            steps {
+               sh "sudo cp target/petclinic.war /opt/apache-tomcat-9.0.65/webapps "
+            }
+        }
+    }
+}
