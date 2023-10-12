@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+    
+    tools {
+        jdk 'jdk17'
+        maven 'maven3'
+    }
+    
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/jaiswaladi246/Petclinic.git'
+            }
+        }
+        
+        stage('Code Compile') {
+            steps {
+                sh 'mvn clean compile'
+            }
+        }
+        
+        stage('Testing') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+        
+        stage('Sonar Analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh '''$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=Petclinic \
+                    -Dsonar.java.binaries=. \
+                    -Dsonar.projectKey=Petclinc '''
+                }
+            }
+        }
+        
+        stage('Owasp Check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'D-Check'
+                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+        
+        stage('Build Stage') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('Build Stage') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('Docker Build') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh "docker build -t petclinic ."
+                        sh "docker tag petclinic wamah/petclinic25:v1"
+                     }
+                }
+            }
+        }
+        
+        stage('Deploy using Docker') {
+            steps {
+                sh 'docker run -d --name pet1 -p 8082:8082 wamah/petclinic25:v1 '
+            }
+        }
+        
+        stage('Deploy to Tomcat') {
+            steps {
+                sh 'cp /var/lib/jenkins/workspace/real-world/target/petclinic.war /opt/apache-tomcat-9.0.65/webapps/'
+            }
+        }
+        
+    }
+}
