@@ -1,0 +1,123 @@
+pipeline {
+    agent any
+
+    tools {
+        python 'python3' // Use the appropriate Python tool installation
+    }
+
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Python Virtual Environment') {
+            steps {
+                sh 'python -m venv venv'
+                sh 'source venv/bin/activate'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'pip install -r requirements.txt'
+            }
+        }
+
+        stage('Unit Testing') {
+            steps {
+                sh 'python manage.py test'
+            }
+        }
+
+        stage('Sonar Analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh "python manage.py sonarqube"
+                }
+            }
+        }
+
+        stage('OWASP Check') {
+            steps {
+                // You can perform security checks for Python using tools like Bandit. Must pip install bandit
+                sh 'bandit -r .'
+            }
+        }
+
+        stage('Build Stage') {
+            steps {
+                // Additional build or packaging steps, if required
+                // Example: sh 'python setup.py build'
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                // Build and push a Docker image for your Django application
+                sh 'docker build -t django-app .'
+                sh 'docker tag django-app your-docker-repo/django-app:latest'
+                withDockerServer([credentialsId: 'docker-cred', url: 'https://docker.example.com']) {
+                    sh 'docker push your-docker-repo/django-app:latest'
+                }
+            }
+        }
+
+        stage('Docker Image Security Scan') {
+            steps {
+                // Perform a Trivy scan or other container image security scanning, as shown in previous responses
+                sh "trivy --no-progress --format json --exit-code 1 --severity HIGH,CRITICAL your-docker-repo/django-app:latest > trivy-report.json"
+                archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
+            }
+        }
+
+        stage('Deployment to Kubernetes') {
+            steps {
+                // Deploy your Django application to Kubernetes
+                // You need to authenticate with k8s
+                withKubeConfig(credentialsId: 'kubeconfig-cred', kubeconfigFile: '/var/lib/jenkins/.kube/config') {
+                   // Your Kubernetes deployment and service commands go here
+                   sh 'kubectl apply -f k8s/deployment.yaml'
+                   sh 'kubectl apply -f k8s/service.yaml'
+
+                 }
+
+                // Example: kubectl apply -f k8s/django-app-deployment.yaml
+            }
+        }
+
+        stage('Deployment to Web Server') {
+            steps {
+                // Deploy your Django application to a web server (e.g., Nginx or Apache)
+                // Example: rsync -avz --delete /path/to/django-app/ webserver:/var/www/django-app/
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext subject: 'Django App Build Successful',
+                body: 'The Django app build has succeeded. Deployments are in progress.',
+                recipientProviders: [developers()]
+        }
+
+        unstable {
+            emailext subject: 'Django App Build Unstable',
+                body: 'The Django app build is unstable. Please investigate and resolve.',
+                recipientProviders: [developers()]
+        }
+
+        failure {
+            emailext subject: 'Django App Build Failed',
+                body: 'The Django app build has failed. Please investigate and resolve.',
+                recipientProviders: [developers()]
+            attachBuildLog: true  // Attach build log for debugging
+            emailext to: 'security@example.com', subject: 'Security Scan Findings', body: 'Trivy vulnerabilities report attached.', attachmentsPattern: '**/trivy-report.json'
+        }
+    }
+}
