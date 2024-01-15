@@ -6,6 +6,22 @@ pipeline {
     }
 
     stages {
+        stage ('increment version') {
+            steps {
+               script {
+                   echo 'incrementing app version...'
+                   sh 'mvn build-helper:parse-version versions:set \
+                       -DnewVersion=\\\${parsedVersion.majorVersion}.\\\${parsedVersion.minorVersion}.\\\${parsedVersion.nextIncrementalVersion} \
+                       versions:commit'
+                
+                   def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
+                   def version = matcher[0][1]
+                   env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+               }
+            }
+            
+        }
+        
         stage('Checkout') {
             steps {
                 git branch: 'jenkins-jobs', credentialsId: 'Gitlab-token', url: 'https://gitlab.com/G-Maina/java-maven-app.git'
@@ -17,21 +33,21 @@ pipeline {
             steps {
                 script {
                     echo "Building the application"
-                    sh "mvn package"
+                    sh "mvn clean package"
                 }
             }
         }
         
         
-        #====> make sure that docker has jenkins user for it to operate
+        
         stage('Build Image') {
             steps {
                 script {
                     echo "Building the docker image"
                     withCredentials([usernamePassword(credentialsId: 'Docker-Cred', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                    sh 'docker build -t wamah/demo-app:jma-2.0 .'
+                    sh "docker build -t wamah/demo-app:${IMAGE_NAME} ."
                     sh "echo $PASS | docker login -u $USER --password-stdin"
-                    sh 'docker push wamah/demo-app:jma-2.0'
+                    sh "docker push wamah/demo-app:${IMAGE_NAME}"
                   }
                     
                 }
@@ -43,7 +59,26 @@ pipeline {
         stage('Deploy app') {
             steps {
                 script {
-                    echo "Deploying the application"
+                    echo 'deploying docker image to Ec2..'
+                    def dockerCmd = "docker run -p 8080:8080 -d wamah/demo-app:${IMAGE_NAME}"
+                    sshagent(['ec2-server-key']) {
+                        sh "ssh -o StrictHostKeyChecking=no ec2-user@54.87.28.140 ${dockerCmd}"
+                    }
+                }
+            }
+        }
+        
+        stage('Commit version Update') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'Gitlab-token', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                        sh 'git config --global user.email "jenkins@example.com"'
+                        sh 'git config --global user.name "jenkins"'
+                        sh "git remote set-url origin https://${USER}:${PASS}@gitlab.com/G-Maina/java-maven-app.git"
+                        sh 'git add .'
+                        sh 'git commit -m "ci: version bump"'
+                        sh 'git push origin HEAD:jenkins-jobs'
+                    }    
                 }
             }
         }
